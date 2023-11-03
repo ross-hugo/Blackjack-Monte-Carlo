@@ -2,9 +2,9 @@ class Card:
     def __init__(self, suit: str, rank: str) -> None:
         self.suit: str = suit
         self.rank: str = rank
-        self.value: int = self.assign_value()
+        self.value: int = self._assign_value()
 
-    def assign_value(self) -> int:
+    def _assign_value(self) -> int:
         if self.rank.isdigit():
             return int(self.rank)
         elif self.rank in ['10', 'Jack', 'Queen', 'King']:
