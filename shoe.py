@@ -10,6 +10,7 @@ class Shoe:
         self.all_ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'Jack', 'Queen', 'King', 'Ace']
 
         self.generate_shoe()
+        self.shuffle_shoe()
 
     def generate_shoe(self) -> None:
         self.cards = [

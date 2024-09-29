@@ -1,26 +1,17 @@
-from collections import defaultdict
-from random import choice
 import numpy as np
-from shoe import Shoe
+from collections import defaultdict
+from random import choice, random
 from tqdm import tqdm
 from blackjack_env import BlackJackEnv, Actions
 
-# TODO add incremental mean when calculating Q
-#   TODO add constant alpha for incremental mean
-# TODO add policy table creation and usage instead of random choice
-# TODO look into multiprocessing because this will probably be a pretty beefy calculation
-# TODO add graph or visualization of resulting policy
-# TODO add card counting
-# TODO add splits
-
-
 class MonteCarlo:
-    def __init__(self, num_decks: int = 1):
+    def __init__(self, num_decks: int = 1, alpha: float = 0.1, epsilon: float = 0.1):
         self.non_first_actions = [Actions.hit, Actions.stay]
         self.first_actions = self.non_first_actions + [Actions.double]
-        bj_shoe = Shoe(num_decks=num_decks)
-        bj_shoe.shuffle_shoe()
-        self.bj_env = BlackJackEnv(shoe=bj_shoe)
+        self.bj_env = BlackJackEnv()
+        self.alpha = alpha  # learning rate for incremental Q updates
+        self.epsilon = epsilon  # epsilon for epsilon-greedy policy
+        self.policy = defaultdict(lambda: np.zeros(len(self.first_actions)))  # policy table
 
     def simulate_episode(self):
         episode_results = []
@@ -28,7 +19,7 @@ class MonteCarlo:
         is_first_turn = True
         state = self.bj_env.reset()
         while True:
-            action = choice(viable_actions)
+            action = self.choose_action(state, is_first_turn)  # Use policy to choose action
             next_state, reward, done = self.bj_env.step(action)
             if is_first_turn:
                 is_first_turn = False
@@ -41,19 +32,41 @@ class MonteCarlo:
 
         return episode_results
 
+    def choose_action(self, state, is_first_turn):
+        """Choose action based on epsilon-greedy policy"""
+        if random() < self.epsilon:  # Exploration
+            if is_first_turn:
+                return choice(self.get_first_actions())
+            else:
+                return choice(self.get_non_first_actions())
+        else:  # Exploitation
+            action_values = self.policy[state]
+            if is_first_turn:
+                # First turn allows all actions (hit, stay, double)
+                return np.argmax(action_values[:len(self.first_actions)])
+            else:
+                # Non-first turn actions (hit, stay)
+                return np.argmax(action_values[:len(self.non_first_actions)])
+
     def exec(self, num_episodes: int = 1000, gamma: float = 1.0):
-        returns_sum = defaultdict(lambda: np.zeros(len(self.first_actions)))
-        Q = defaultdict(lambda: np.zeros(len(self.first_actions)))
-        N = defaultdict(lambda: np.zeros(len(self.first_actions)))
+        Q = defaultdict(lambda: np.zeros(len(self.first_actions)))  # Action-value function
+        N = defaultdict(lambda: np.zeros(len(self.first_actions)))  # State-action visit counts
 
         for _ in tqdm(range(num_episodes)):
             episode = self.simulate_episode()
             states, actions, rewards = zip(*episode)
-            discounts = np.array([gamma ** i for i in range(len(rewards)+1)])
+            discounts = np.array([gamma ** i for i in range(len(rewards))])
+
             for i, state in enumerate(states):
-                N[state][actions[i]] += 1
-                returns_sum[state][actions[i]] += sum(rewards[i:] * discounts[:-(1 + i)])
-                Q[state][actions[i]] = returns_sum[state][actions[i]] / N[state][actions[i]]
+                action = actions[i]
+                G = sum(rewards[i:] * discounts[:len(rewards[i:])])  # Calculate return (G)
+                N[state][action] += 1  # Count visits
+
+                # Incremental mean formula for Q(s, a)
+                Q[state][action] += self.alpha * (G - Q[state][action])  # Update Q with constant alpha
+
+                # Update policy to be greedy w.r.t. Q
+                self.policy[state] = Q[state]  # Greedy policy based on Q
 
         return Q
 
@@ -65,5 +78,6 @@ class MonteCarlo:
 
 
 if __name__ == "__main__":
-    mc = MonteCarlo(num_decks=6)
-    mc.exec(num_episodes=20, gamma=.9)
+    mc = MonteCarlo(num_decks=6, alpha=0.1, epsilon=0.1)
+    Q_values = mc.exec(num_episodes=1000, gamma=0.9)
+    print(Q_values)
